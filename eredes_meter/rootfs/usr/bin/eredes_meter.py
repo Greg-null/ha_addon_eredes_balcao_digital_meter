@@ -195,15 +195,27 @@ def scrape_all_meters(cfg: dict) -> dict:
             page.get_by_role("button", name="Entrar").click()
             log.info("Login submitted")
 
-            # Check for reCAPTCHA
+            # Check for reCAPTCHA — save screenshot for debugging
             page.wait_for_timeout(5_000)
+            page.screenshot(path="/data/debug_after_login.png", full_page=True)
+            log.info("Debug screenshot saved to /data/debug_after_login.png")
+            log.info("Page URL after login: %s", page.url)
+            log.info("Page title after login: %s", page.title())
+
+            # Log all visible text containing "Segurança" or "captcha"
+            body_text = page.locator("body").inner_text()
+            for line in body_text.split("\n"):
+                line = line.strip()
+                if any(kw in line.lower() for kw in ("segurança", "captcha", "seguranca")):
+                    log.info("  Found text: '%s'", line[:200])
+
             if page.locator("text=Validação de Segurança").is_visible():
                 log.error("reCAPTCHA challenge detected. This usually means E-REDES "
                           "flagged this IP as suspicious. From a residential IP (e.g. "
                           "your Home Assistant), this should not appear.")
                 raise RuntimeError("reCAPTCHA blocked login")
 
-            log.info("Login successful, URL: %s", page.url)
+            log.info("Login successful, no reCAPTCHA")
 
             # Step 2: Navigate to readings
             page.get_by_role("heading", name="Os meus locais").wait_for(timeout=120_000)
