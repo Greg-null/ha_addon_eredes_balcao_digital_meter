@@ -3,7 +3,7 @@
 E-REDES Balcao Digital Meter -> MQTT
 =====================================
 Reads NIF/password and meter list from /data/options.json (populated by HAOS),
-scrapes energy readings from E-REDES Balcao Digital using Selenium,
+scrapes energy readings from E-REDES Balcao Digital using Playwright + Stealth,
 and publishes vazio/ponta/cheias values to MQTT topics.
 """
 
@@ -15,13 +15,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright_stealth import Stealth
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -123,58 +118,18 @@ def publish_readings(client: mqtt.Client, cpe: str, readings: dict):
     log.info("  MQTT -> %s = %s", topic, readings.get("timestamp", ""))
 
 
-# ── Browser ──────────────────────────────────────────────────────────────────
-def create_driver() -> webdriver.Chrome:
-    """Create a headless Chrome/Chromium WebDriver using system binaries."""
-    options = Options()
-    options.binary_location = "/usr/bin/chromium-browser"
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--window-size=1280,800")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-
-    service = Service(executable_path="/usr/bin/chromedriver")
-    return webdriver.Chrome(service=service, options=options)
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-def wait_and_click(driver, by, value, timeout=60):
-    """Wait for element to be clickable and click it."""
-    el = WebDriverWait(driver, timeout).until(
-        EC.element_to_be_clickable((by, value))
-    )
-    el.click()
-    return el
-
-
-def wait_for_visible(driver, by, value, timeout=60):
-    """Wait for element to be visible."""
-    return WebDriverWait(driver, timeout).until(
-        EC.visibility_of_element_located((by, value))
-    )
-
-
 # ── Scraper ──────────────────────────────────────────────────────────────────
-def read_latest_reading(driver) -> dict:
+def read_latest_reading(page) -> dict:
     """Extract the newest row from the readings table."""
-    first_row = WebDriverWait(driver, 120).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, "table tbody tr"))
-    )
-    cells = first_row.find_elements(By.TAG_NAME, "td")
+    first_row = page.locator("table tbody tr").first
+    first_row.wait_for(timeout=120_000)
+    cells = first_row.locator("td")
 
     raw = {
-        "timestamp": cells[2].text.strip(),
-        "vazio": cells[5].text.strip(),
-        "ponta": cells[6].text.strip(),
-        "cheias": cells[7].text.strip(),
+        "timestamp": cells.nth(2).inner_text().strip(),
+        "vazio": cells.nth(5).inner_text().strip(),
+        "ponta": cells.nth(6).inner_text().strip(),
+        "cheias": cells.nth(7).inner_text().strip(),
     }
 
     # Normalize decimal separators (Portuguese uses comma)
@@ -196,131 +151,109 @@ def scrape_all_meters(cfg: dict) -> dict:
     log.info("Starting scrape run for %d meter(s)", len(meters))
     results = {}
 
-    driver = create_driver()
-
-    try:
-        # Step 1: Login
-        log.info("Opening login page: %s", LOGIN_URL)
-        driver.set_page_load_timeout(180)
-        driver.get(LOGIN_URL)
-
-        # Accept cookies (may not appear every time)
-        try:
-            cookie_btn = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, "//button[contains(., 'Aceitar todos os cookies')]")
-                )
-            )
-            cookie_btn.click()
-            log.info("Accepted cookies")
-        except TimeoutException:
-            log.info("No cookie dialog found, continuing")
-
-        # Select Particular account type
-        wait_and_click(driver, By.XPATH, "//*[contains(text(), 'Particular')]", timeout=30)
-        log.info("Selected 'Particular' account type")
-
-        # Wait for login form to load after selecting account type
-        time.sleep(3)
-
-        # Fill credentials — find visible text inputs on the login form
-        # Playwright used get_by_role("textbox", name="NIF") which matches by
-        # accessible name (label, aria-label, placeholder, title). Cast a wide net.
-        text_inputs = WebDriverWait(driver, 30).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "input:not([type='hidden'])"))
+    stealth = Stealth()
+    with stealth.use_sync(sync_playwright()) as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
-        visible_inputs = [i for i in text_inputs if i.is_displayed()]
-        log.info("Found %d visible input(s) on login form", len(visible_inputs))
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 800},
+        )
+        page = context.new_page()
 
-        if len(visible_inputs) < 2:
-            # Debug: dump page info to help diagnose
-            log.error("Expected at least 2 inputs (NIF + password). Page title: %s", driver.title)
-            log.error("Current URL: %s", driver.current_url)
-            log.error("Page snippet: %s", driver.page_source[:2000])
-            raise RuntimeError("Login form inputs not found")
-
-        # First visible input = NIF, second = password (standard form order)
-        nif_field = visible_inputs[0]
-        nif_field.clear()
-        nif_field.send_keys(nif)
-
-        pwd_field = visible_inputs[1]
-        pwd_field.clear()
-        pwd_field.send_keys(password)
-
-        wait_and_click(driver, By.XPATH, "//button[contains(., 'Entrar')]")
-        log.info("Login submitted")
-
-        # Check for reCAPTCHA
-        time.sleep(5)
         try:
-            driver.find_element(By.XPATH, "//*[contains(text(), 'Validação de Segurança')]")
-            log.error(
-                "reCAPTCHA challenge detected. This usually means E-REDES "
-                "flagged this IP as suspicious. From a residential IP (e.g. "
-                "your Home Assistant), this should not appear."
-            )
-            raise RuntimeError("reCAPTCHA blocked login")
-        except Exception as e:
-            if "reCAPTCHA blocked login" in str(e):
-                raise
-            # Element not found = no reCAPTCHA, good
+            # Step 1: Login
+            log.info("Opening login page: %s", LOGIN_URL)
+            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=180_000)
+            page.wait_for_timeout(3_000)
 
-        # Step 2: Navigate to readings
-        wait_and_click(driver, By.XPATH, "//h1[contains(., 'Os meus locais')] | //h2[contains(., 'Os meus locais')] | //h3[contains(., 'Os meus locais')] | //*[contains(@class, 'heading') and contains(., 'Os meus locais')]", timeout=120)
-        log.info("Navigated to: Os meus locais")
-
-        wait_and_click(driver, By.XPATH, "//*[contains(text(), 'Leituras')]", timeout=60)
-        log.info("Navigated to: Leituras")
-
-        wait_and_click(driver, By.XPATH, "//*[contains(text(), 'Consultar histórico')]", timeout=60)
-        log.info("Navigated to: Consultar historico")
-
-        # Step 3: For each meter, select it and read data
-        for cpe in meters:
+            # Accept cookies (may not appear every time)
             try:
-                log.info("Selecting meter: %s", cpe)
-                meter_el = WebDriverWait(driver, 120).until(
-                    EC.element_to_be_clickable(
-                        (By.XPATH, f"//*[contains(@class, 'alias') and contains(., '{cpe}')]")
-                    )
-                )
-                meter_el.click()
+                cookie_btn = page.get_by_role("button", name="Aceitar todos os cookies")
+                cookie_btn.wait_for(timeout=10_000)
+                cookie_btn.click()
+                log.info("Accepted cookies")
+            except PlaywrightTimeout:
+                log.info("No cookie dialog found, continuing")
 
-                reading = read_latest_reading(driver)
-                log.info(
-                    "Reading for %s: vazio=%s ponta=%s cheias=%s (%s)",
-                    cpe, reading["vazio"], reading["ponta"],
-                    reading["cheias"], reading["timestamp"],
-                )
-                results[cpe] = reading
+            # Select Particular account type
+            page.get_by_text("Particular").wait_for(timeout=30_000)
+            page.get_by_text("Particular").click()
+            page.wait_for_timeout(3_000)
 
-                # Navigate back for next meter
-                if len(meters) > 1:
-                    driver.back()
-                    WebDriverWait(driver, 60).until(
-                        EC.element_to_be_clickable(
-                            (By.XPATH, "//*[contains(text(), 'Consultar histórico')]")
-                        )
-                    )
+            # Fill credentials
+            page.get_by_role("textbox", name="NIF").wait_for(timeout=30_000)
+            page.get_by_role("textbox", name="NIF").fill(nif)
+            page.get_by_role("textbox", name="Password").fill(password)
+            page.get_by_role("button", name="Entrar").click()
+            log.info("Login submitted")
 
-            except Exception as e:
-                log.error("Failed to scrape meter %s: %s", cpe, e)
-                results[cpe] = None
+            # Check for reCAPTCHA
+            page.wait_for_timeout(5_000)
+            if page.locator("text=Validação de Segurança").is_visible():
+                log.error("reCAPTCHA challenge detected. This usually means E-REDES "
+                          "flagged this IP as suspicious. From a residential IP (e.g. "
+                          "your Home Assistant), this should not appear.")
+                raise RuntimeError("reCAPTCHA blocked login")
 
-    except Exception as e:
-        log.error("Scrape failed: %s", e, exc_info=True)
-        try:
-            log.error("Page URL at failure: %s", driver.current_url)
-            log.error("Page title at failure: %s", driver.title)
-        except Exception:
-            pass
-        for cpe in meters:
-            if cpe not in results:
-                results[cpe] = None
+            log.info("Login successful, URL: %s", page.url)
 
-    finally:
-        driver.quit()
+            # Step 2: Navigate to readings
+            page.get_by_role("heading", name="Os meus locais").wait_for(timeout=120_000)
+            page.get_by_role("heading", name="Os meus locais").click()
+            log.info("Navigated to: Os meus locais")
+
+            page.get_by_text("Leituras").wait_for(timeout=60_000)
+            page.get_by_text("Leituras").click()
+            log.info("Navigated to: Leituras")
+
+            page.get_by_text("Consultar histórico").wait_for(timeout=60_000)
+            page.get_by_text("Consultar histórico").click()
+            log.info("Navigated to: Consultar historico")
+
+            # Step 3: For each meter, select it and read data
+            for cpe in meters:
+                try:
+                    log.info("Selecting meter: %s", cpe)
+                    meter_elem = page.locator(f".alias:has-text('{cpe}')")
+                    meter_elem.wait_for(timeout=120_000)
+                    meter_elem.click()
+
+                    reading = read_latest_reading(page)
+                    log.info("Reading for %s: vazio=%s ponta=%s cheias=%s (%s)",
+                             cpe, reading["vazio"], reading["ponta"],
+                             reading["cheias"], reading["timestamp"])
+                    results[cpe] = reading
+
+                    # Navigate back for next meter
+                    if len(meters) > 1:
+                        page.go_back()
+                        page.get_by_text("Consultar histórico").wait_for(timeout=60_000)
+
+                except Exception as e:
+                    log.error("Failed to scrape meter %s: %s", cpe, e)
+                    results[cpe] = None
+
+        except Exception as e:
+            log.error("Scrape failed: %s", e, exc_info=True)
+            try:
+                log.error("Page URL at failure: %s", page.url)
+            except Exception:
+                pass
+            for cpe in meters:
+                if cpe not in results:
+                    results[cpe] = None
+
+        finally:
+            context.close()
+            browser.close()
 
     return results
 

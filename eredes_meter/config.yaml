@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration
 name: "E-REDES Balcão Digital Meter"
-version: "1.0.0"
+version: "1.1.0"
 slug: "eredes_meter"
 description: "Scrapes energy meter readings (vazio, ponta, cheias) from E-REDES Balcão Digital and publishes them via MQTT."
 url: "https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter"

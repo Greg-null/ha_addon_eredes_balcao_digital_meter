@@ -25,22 +25,21 @@ LABEL \
     org.opencontainers.image.revision=${BUILD_REF} \
     org.opencontainers.image.version=${BUILD_VERSION}
 
-# System dependencies for Selenium / Chromium
-RUN apk add --no-cache \
-    chromium \
-    chromium-chromedriver \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    font-noto \
-    udev
+# System dependencies for Playwright on Debian
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
 
-# Python packages (Selenium uses system chromium + chromedriver from apk)
-RUN pip3 install --no-cache-dir \
-    selenium==4.18.1 \
+# Python packages
+RUN pip3 install --no-cache-dir --break-system-packages \
+    playwright==1.49.1 \
+    playwright-stealth==2.0.2 \
     paho-mqtt==1.6.1
+
+# Install Playwright's bundled Chromium + dependencies
+RUN playwright install --with-deps chromium
 
 # Add-on files
 COPY rootfs /
