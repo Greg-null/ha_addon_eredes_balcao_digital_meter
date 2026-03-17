@@ -198,6 +198,14 @@ def scrape_all_meters(cfg: dict) -> dict:
             page.get_by_role("button", name="Entrar").click()
             log.info("Login submitted")
 
+            # Check for reCAPTCHA (triggers from data center IPs, usually not from residential)
+            page.wait_for_timeout(5_000)
+            if page.locator("text=Validação de Segurança").is_visible():
+                log.error("reCAPTCHA challenge detected. This usually means E-REDES "
+                          "flagged this IP as suspicious. From a residential IP (e.g. "
+                          "your Home Assistant), this should not appear.")
+                raise RuntimeError("reCAPTCHA blocked login")
+
             # Step 2: Navigate to readings
             page.get_by_role("heading", name="Os meus locais").wait_for(timeout=120_000)
             page.get_by_role("heading", name="Os meus locais").click()
