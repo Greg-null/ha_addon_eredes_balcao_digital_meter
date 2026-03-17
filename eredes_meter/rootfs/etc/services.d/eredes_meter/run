@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bashio
+# Start the E-REDES meter scraper service
+exec /usr/bin/eredes_meter.py
