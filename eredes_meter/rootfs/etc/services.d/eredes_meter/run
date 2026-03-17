@@ -1,3 +1,4 @@
 #!/usr/bin/with-contenv bashio
-# Start the E-REDES meter scraper service
-exec /usr/bin/eredes_meter.py
+# Start the E-REDES meter scraper with a virtual display (Xvfb)
+# so Chromium runs in non-headless mode, avoiding bot detection.
+exec xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" /usr/bin/eredes_meter.py

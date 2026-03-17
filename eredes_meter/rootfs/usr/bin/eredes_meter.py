@@ -154,7 +154,7 @@ def scrape_all_meters(cfg: dict) -> dict:
     stealth = Stealth()
     with stealth.use_sync(sync_playwright()) as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
