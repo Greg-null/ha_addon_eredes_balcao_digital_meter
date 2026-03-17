@@ -218,19 +218,33 @@ def scrape_all_meters(cfg: dict) -> dict:
 
         # Select Particular account type
         wait_and_click(driver, By.XPATH, "//*[contains(text(), 'Particular')]", timeout=30)
+        log.info("Selected 'Particular' account type")
 
-        # Fill credentials
-        nif_field = WebDriverWait(driver, 30).until(
-            EC.visibility_of_element_located(
-                (By.XPATH, "//input[@name='nif' or @placeholder='NIF' or @aria-label='NIF']")
-            )
+        # Wait for login form to load after selecting account type
+        time.sleep(3)
+
+        # Fill credentials — find visible text inputs on the login form
+        # Playwright used get_by_role("textbox", name="NIF") which matches by
+        # accessible name (label, aria-label, placeholder, title). Cast a wide net.
+        text_inputs = WebDriverWait(driver, 30).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "input:not([type='hidden'])"))
         )
+        visible_inputs = [i for i in text_inputs if i.is_displayed()]
+        log.info("Found %d visible input(s) on login form", len(visible_inputs))
+
+        if len(visible_inputs) < 2:
+            # Debug: dump page info to help diagnose
+            log.error("Expected at least 2 inputs (NIF + password). Page title: %s", driver.title)
+            log.error("Current URL: %s", driver.current_url)
+            log.error("Page snippet: %s", driver.page_source[:2000])
+            raise RuntimeError("Login form inputs not found")
+
+        # First visible input = NIF, second = password (standard form order)
+        nif_field = visible_inputs[0]
         nif_field.clear()
         nif_field.send_keys(nif)
 
-        pwd_field = driver.find_element(
-            By.XPATH, "//input[@type='password' or @name='password' or @aria-label='Password']"
-        )
+        pwd_field = visible_inputs[1]
         pwd_field.clear()
         pwd_field.send_keys(password)
 
@@ -296,6 +310,11 @@ def scrape_all_meters(cfg: dict) -> dict:
 
     except Exception as e:
         log.error("Scrape failed: %s", e, exc_info=True)
+        try:
+            log.error("Page URL at failure: %s", driver.current_url)
+            log.error("Page title at failure: %s", driver.title)
+        except Exception:
+            pass
         for cpe in meters:
             if cpe not in results:
                 results[cpe] = None
