@@ -25,7 +25,7 @@ LABEL \
     org.opencontainers.image.revision=${BUILD_REF} \
     org.opencontainers.image.version=${BUILD_VERSION}
 
-# System dependencies for Playwright / Chromium
+# System dependencies for Selenium / Chromium
 RUN apk add --no-cache \
     chromium \
     chromium-chromedriver \
@@ -37,14 +37,9 @@ RUN apk add --no-cache \
     font-noto \
     udev
 
-# Tell Playwright to use the system Chromium
-ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
-
-# Python packages
+# Python packages (Selenium uses system chromium + chromedriver from apk)
 RUN pip3 install --no-cache-dir \
-    playwright==1.42.0 \
+    selenium==4.18.1 \
     paho-mqtt==1.6.1
 
 # Add-on files
