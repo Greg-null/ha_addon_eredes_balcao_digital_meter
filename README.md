@@ -34,17 +34,17 @@ Playwright and Chromium are bundled inside the add-on container — no manual in
 
 1. In Home Assistant: **Settings → Add-ons → Add-on Store**
 2. Top right: **⋮ → Repositories**
-3. Add: `https://github.com/Greg-null/ha_addon_eredes_balcao_digital`
+3. Add: `https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter`
 4. Find **E-REDES Balcão Digital Meter** → **Install**
 
-[![Open your Home Assistant instance and show the add add-on repository dialog with this repository pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FGreg-null%2Fha_addon_eredes_balcao_digital)
+[![Open your Home Assistant instance and show the add add-on repository dialog with this repository pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FGreg-null%2Fha_addon_eredes_balcao_digital_meter)
 
 ### Local Installation
 
 1. Clone this repository into your Home Assistant addons folder:
    ```bash
    cd /addons
-   git clone https://github.com/Greg-null/ha_addon_eredes_balcao_digital.git
+   git clone https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter.git
    ```
 2. In Home Assistant: **Settings → Add-ons → Add-on Store**
 3. Top right: **⋮ → Check for updates**

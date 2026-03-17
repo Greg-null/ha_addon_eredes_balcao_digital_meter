@@ -9,5 +9,5 @@ squash: false
 labels:
   org.opencontainers.image.title: "E-REDES Balcão Digital Meter"
   org.opencontainers.image.description: "Scrapes energy meter readings from E-REDES and publishes them via MQTT."
-  org.opencontainers.image.source: "https://github.com/Greg-null/ha_addon_eredes_balcao_digital"
+  org.opencontainers.image.source: "https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter"
   org.opencontainers.image.licenses: "MIT"

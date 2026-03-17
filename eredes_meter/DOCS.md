@@ -108,4 +108,4 @@ Replace `PT0002000012345678XX` with your actual CPE number.
 
 ## Support
 
-Open an issue on [GitHub](https://github.com/Greg-null/ha_addon_eredes_balcao_digital/issues).
+Open an issue on [GitHub](https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter/issues).

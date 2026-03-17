@@ -20,7 +20,7 @@ LABEL \
     org.opencontainers.image.title="${BUILD_NAME}" \
     org.opencontainers.image.description="${BUILD_DESCRIPTION}" \
     org.opencontainers.image.licenses="MIT" \
-    org.opencontainers.image.source="https://github.com/Greg-null/ha_addon_eredes_balcao_digital" \
+    org.opencontainers.image.source="https://github.com/Greg-null/ha_addon_eredes_balcao_digital_meter" \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.revision=${BUILD_REF} \
     org.opencontainers.image.version=${BUILD_VERSION}
